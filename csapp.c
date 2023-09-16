@@ -599,6 +599,8 @@ void Connect(int sockfd, struct sockaddr *serv_addr, int addrlen)
  * Protocol-independent wrappers
  *******************************/
 /* $begin getaddrinfo */
+// return 0 if ok , nonzero error code on error
+
 void Getaddrinfo(const char *node, const char *service, 
                  const struct addrinfo *hints, struct addrinfo **res)
 {
