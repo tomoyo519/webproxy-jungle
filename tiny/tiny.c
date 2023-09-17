@@ -198,7 +198,9 @@ int srcfd;
  strcpy(filetype, "image/png");
  else if (strstr(filename, ".jpg"))
  strcpy(filetype, "image/jpeg");
- else
+ else if(strstr(filename,".mp4"))
+ strcpy(filetype, "video/ogg");
+ else 
  strcpy(filetype, "text/plain");
  }
 
