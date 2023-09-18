@@ -177,12 +177,14 @@ int srcfd;
  printf("%s", buf);
 
  /* Send response body to client */
- srcfd = Open(filename, O_RDONLY, 0);
- srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+ srcfd = Open(filename, O_RDONLY, 0); // line:netp:servestatic:open
+//  srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+ scrp = (char *)Malloc(filesize);
+ Rio_readn(srcfd, srcp, filesize);
  Close(srcfd);
  Rio_writen(fd, srcp, filesize);
- Munmap(srcp, filesize);
- 
+//  Munmap(srcp, filesize);dcc
+ free(srcp);
  }
 
  /*
