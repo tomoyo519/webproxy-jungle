@@ -10,7 +10,7 @@ void doit(int clientfd);
 void read_requesthdrs(rio_t *request_rio, void *request_buf, int serverfd, char *hostname, char *port);
 void parse_uri(char *uri, char *hostname, char *port, char *path);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
-
+void *thread(void *argptr);
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr =
@@ -21,10 +21,14 @@ static const char *user_agent_hdr =
 static const int is_local_test = 1;
 
 int main(int argc, char **argv) {
-  int listenfd, clientfd;
+  int listenfd, *clientfd;
   char client_hostname[MAXLINE], client_port[MAXLINE]; // 프록시가 요청을 받고 응답해줄 클라이언트의 Host, ip
   socklen_t clientlen;
   struct sockaddr_storage clientaddr;
+  // 요청 하나하나에 개별 회선을 지정해주기.
+  //malloc 함수를 사용해 개별 메모리에 회선을 넣어서 처리해주자.
+
+  pthread_t tid; // 스레드에 부여할 tid 번호
 
   if (argc != 2) {
     fprintf(stderr, "usage: %s <port>\n", argv[0]);
@@ -48,24 +52,35 @@ int main(int argc, char **argv) {
     // 클라이언트 연결 요청 수신
 
      // 프록시가 서버로서 클라이언트와 맺는 파일 디스크립터(소켓 디스크립터) : 고유 식별되는 회선이자 메모리 그 자체
-    clientfd = Accept(listenfd, (SA*)&clientaddr, &clientlen); 
+    
+    clientfd = (int *)Malloc(sizeof(int)); // 여러개의 디스크립터를 만들것이므로 덮어쓰지 못하도록 고유메모리에 할당
+    *clientfd = Accept(listenfd, (SA*)&clientaddr, &clientlen); // 프록시가 서버로서 클라이언트와 맺는 파일 디스크립터( = 소켓디스크립터)
     //getnameinfo : 소켓주소를 호스트이름과 서비스이름으로 변환하는 함수.
     //  ip주소나 포트번호를 사람이 읽을 수 있는 형식으로 변환할때 사용
     Getnameinfo((SA *) &clientaddr, clientlen, client_hostname, MAXLINE, client_port, MAXLINE, 0);
+    Pthread_create(&tid, NULL, thread, clientfd); // 프록시가 중개를 시작 
     printf("Accepted connection from (%s %s)\n", client_hostname, client_port);
 
     // 프록시가 중개를 시작
-    doit(clientfd);   // line:netp:tiny:doit
+    // doit(clientfd);   // line:netp:tiny:doit
     // 자신 쪽의 연결 끝을 닫는다.
-    Close(clientfd);  // line:netp:tiny:close
+    // Close(clientfd);  // line:netp:tiny:close
 
     
   }
   return 0;
 }
 
-
-
+//멀티 스레딩 서버에서 칵 클라이언트 연결을 처리하는 쓰레드의 메인 함수.
+void *thread(void *argptr){
+  int clientfd = *((int *) argptr); // 클라이언트와 연결된 파일 디스크립터
+  Pthread_detach((pthread_self())); // 현재 실행중인 쓰레드를 분리함.
+  // 분리된 쓰레드는 종료시 자동으로 정리되므로, 다른 쓰레드가 join 할 피료가 없다..............................................
+  Free(argptr);
+  doit(clientfd); // clientfd를 통해 데이터를 읽고, 응답을 보내는 등의 작업 수행
+  Close(clientfd);
+  return NULL;
+}
 //RIO = robust I/O = 안정적인 입출력 패키지 
 // rio는 Registered Input/Output 라는 소켓 API 이다. 메시지를 보낼 수 있는 텍스트창으로 보면 됨.
 //1. 클라이언트와의 fd를 클라이언트용 rio 에 연결(rio_readinit)
