@@ -17,10 +17,12 @@ static const char *user_agent_hdr =
     "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
     "Firefox/10.0.3\r\n";
 // 테스트 환경에 따른 도메인 & 포트 지정을 위한 상수(0할당시 도메인 &포트가 고정되어 외부에서 접속 가능)
+
 static const int is_local_test = 1;
+
 int main(int argc, char **argv) {
   int listenfd, clientfd;
-  char client_hostname[MAXLINE], client_port[MAXLINE];
+  char client_hostname[MAXLINE], client_port[MAXLINE]; // 프록시가 요청을 받고 응답해줄 클라이언트의 Host, ip
   socklen_t clientlen;
   struct sockaddr_storage clientaddr;
 
@@ -36,25 +38,42 @@ int main(int argc, char **argv) {
   //2-4 Rio_writen(servefd, buf, len(buf))
   // 3 proxy : end server가 보낸 응답 받기 + client 로 전송
   // 3-1 헤더로 읽으면서(readlineb) body의 size정보 저장
+
+  // 어떤 클라이언트의 요청이 들어오면, 프록시는 클라이언트의 요청에 담겨있는 목적지 호스트와 포트를 뽑아내어
+  // 목적지 서버와 clientfd를 맺고, 가운데에서 요청과 응답을 전달한다.
   listenfd = Open_listenfd(argv[1]); // 전달 받은 포트 번호를 사용해 수신 소켓 생성
   while (1)
   {
     clientlen = sizeof(clientaddr);
     // 클라이언트 연결 요청 수신
+
+     // 프록시가 서버로서 클라이언트와 맺는 파일 디스크립터(소켓 디스크립터) : 고유 식별되는 회선이자 메모리 그 자체
     clientfd = Accept(listenfd, (SA*)&clientaddr, &clientlen); 
     //getnameinfo : 소켓주소를 호스트이름과 서비스이름으로 변환하는 함수.
     //  ip주소나 포트번호를 사람이 읽을 수 있는 형식으로 변환할때 사용
     Getnameinfo((SA *) &clientaddr, clientlen, client_hostname, MAXLINE, client_port, MAXLINE, 0);
     printf("Accepted connection from (%s %s)\n", client_hostname, client_port);
+
+    // 프록시가 중개를 시작
     doit(clientfd);   // line:netp:tiny:doit
     // 자신 쪽의 연결 끝을 닫는다.
     Close(clientfd);  // line:netp:tiny:close
-    //concurrent프록시
+
     
   }
   return 0;
 }
 
+
+
+//RIO = robust I/O = 안정적인 입출력 패키지 
+// rio는 Registered Input/Output 라는 소켓 API 이다. 메시지를 보낼 수 있는 텍스트창으로 보면 됨.
+//1. 클라이언트와의 fd를 클라이언트용 rio 에 연결(rio_readinit)
+//2. 클라이언트의 요청을 한줄 읽어들여서(rio_readlineb) 메서드와 url, http버전을 얻고, url에서 목적지 호스트와 포트를 뽑아낸다.
+// 3. 목적지 호스트와 포트를 가지고 서버용 fd를 생성하고, 서버용 rio 에 연결(rio_readinitb)한다.
+// 4. 클라이언트가 보낸 첫줄을 이미 읽어 유실되었고, HTTP버전을 바꾸거나 추가 헤더를 붙일 필요가 있으므로,
+// 5. 서버에 요청 메시지를 보낸다.(RIo-writen)
+// 6. 서버응답이 오면 클라이언트에게 전달한다(rio_readnb, rio_writen)
 
 void doit(int clientfd)
 
@@ -64,14 +83,6 @@ void doit(int clientfd)
   char method[MAXLINE], uri[MAXLINE], path[MAXLINE], hostname[MAXLINE], port[MAXLINE];
   char *response_ptr, filename[MAXLINE], cgiargs[MAXLINE] ,*srcp;
   rio_t request_rio, response_rio;
-
-  //cgiargs : CGI 스크립트의 인자를 참조할떄 사용됨.
-  // 웹서버에서 CGI 스크립트를 호출할때 클라이언트로부터 받은 요청 정보를 스크립트에 전달하기 위해 인자 사용
-  // http get 요청의 경우, URL에 포함된 쿼리 문자열이 cgiargs가 됨.
-  // 웹서버는 이러한 cgiargs를 CGI 스크립트에 전달하고, 스크립트는 이 정보를 사용하여 필요한 처리를
-  //수행한 다음에 결과를 웹서버로 다시 반환함. 그런다음 웹서버는 이 결과를 클라이언트에게 전송함.
-  // cgiargs는 웹 클라이언트와 서버 사이의 상호작용에서 중요한 역할을 함
-
 
     /* Request 1 - 요청 라인 읽기 [🙋‍♀️ Client -> 🚒 Proxy] */
   Rio_readinitb(&request_rio, clientfd);
