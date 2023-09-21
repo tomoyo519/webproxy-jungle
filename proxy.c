@@ -12,12 +12,14 @@ void parse_uri(char *uri, char *hostname, char *port, char *path);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
 void *thread(void *argptr);
 
-/* You won't lose style points for including this long line in your code */
+// 클라이언ㅌ트 소프트웨어의 정보.
+// 서버는 이 정보를 통해 적절한 콘텐츠를 제공하거나, 화면을 최적화하여 보여줄 수 있다.
+// firefox 브라우저를 사용하는 클라이언트구나! => 더 적절한 콘텐츠 제공 가능
 static const char *user_agent_hdr =
     "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
     "Firefox/10.0.3\r\n";
-// 테스트 환경에 따른 도메인 & 포트 지정을 위한 상수(0할당시 도메인 &포트가 고정되어 외부에서 접속 가능)
 
+// 테스트 환경에 따른 도메인 & 포트 지정을 위한 상수(0할당시 도메인 &포트가 고정되어 외부에서 접속 가능)
 static const int is_local_test = 1;
 
 int main(int argc, char **argv) {
@@ -25,15 +27,24 @@ int main(int argc, char **argv) {
   char client_hostname[MAXLINE], client_port[MAXLINE]; // 프록시가 요청을 받고 응답해줄 클라이언트의 Host, ip
   socklen_t clientlen;
   struct sockaddr_storage clientaddr;
+  // 멀티스레드 방법 ! 
   // 요청 하나하나에 개별 회선을 지정해주기.
   //malloc 함수를 사용해 개별 메모리에 회선을 넣어서 처리해주자.
 
   pthread_t tid; // 스레드에 부여할 tid 번호
-
+//쓰레드(thread)는 프로그램 내에서 실행 흐름의 단위. 한 프로세스 내에서 여러개의 쓰레드를 생성하면, 각 쓰레드는 독립적으로 실행되면서 병렬처리를 가능하게 함
+// 쓰레드의 특징
+// 1. 자원공유 : 같은 프로세스 내의 쓰레드들은 메모리와 파일 등의 자원을 공유함. 
+// 2. 독립적인 실행 흐름 : 각 쓰레드는 독립적잉ㄴ 스택을 가지며 자신만의 레지스터 상태와 프로그램 카운터를 가짐
+// 3. 경량화 : 쓰레드는 프로세스에 비해 생성과 제거, 전환 등이 빠르고 경제적임.
+// 쓰레드 사용시 주의점 : 동기화문제. 여러 쓰레드가 동시에 같은 데이터를 접근하거나 수정하면 데이터 불일치 문제가 발생할 수 있음.
+// 데드락. 두개 이상의 스레딩이 서로 필요한 리소스를 잡고 있는 상태에서 서로 대기하는 현상
+// 해결방법 : 뮤텍스 = 상호배제. 여러 스레드나 프로세스가 공유 자원에 동시에 접근하는 것을 방지하는 동기화 기법
   if (argc != 2) {
     fprintf(stderr, "usage: %s <port>\n", argv[0]);
     exit(1);
   }  
+  //sequential 구현 !
   //client 요청받기
   // clientfd = Accept(listenfd, (SA*)&clientaddr, &clientlen);
   //proxy가 client에게  받은 요청을 end server로 보내기
@@ -49,10 +60,8 @@ int main(int argc, char **argv) {
   while (1)
   {
     clientlen = sizeof(clientaddr);
-    // 클라이언트 연결 요청 수신
 
-     // 프록시가 서버로서 클라이언트와 맺는 파일 디스크립터(소켓 디스크립터) : 고유 식별되는 회선이자 메모리 그 자체
-    
+     // 프록시가 서버로서 클라이언트와 맺는 파일 디스크립터(소켓 디스크립터) : 고유 식별되는 회선이자 메모리 그 자체    
     clientfd = (int *)Malloc(sizeof(int)); // 여러개의 디스크립터를 만들것이므로 덮어쓰지 못하도록 고유메모리에 할당
     *clientfd = Accept(listenfd, (SA*)&clientaddr, &clientlen); // 프록시가 서버로서 클라이언트와 맺는 파일 디스크립터( = 소켓디스크립터)
     //getnameinfo : 소켓주소를 호스트이름과 서비스이름으로 변환하는 함수.
@@ -61,7 +70,7 @@ int main(int argc, char **argv) {
     Pthread_create(&tid, NULL, thread, clientfd); // 프록시가 중개를 시작 
     printf("Accepted connection from (%s %s)\n", client_hostname, client_port);
 
-    // 프록시가 중개를 시작
+    // sequential 시 사용
     // doit(clientfd);   // line:netp:tiny:doit
     // 자신 쪽의 연결 끝을 닫는다.
     // Close(clientfd);  // line:netp:tiny:close
@@ -71,16 +80,16 @@ int main(int argc, char **argv) {
   return 0;
 }
 
-//멀티 스레딩 서버에서 칵 클라이언트 연결을 처리하는 쓰레드의 메인 함수.
+//멀티 스레딩 서버에서 각 클라이언트 연결을 처리하는 쓰레드의 메인 함수.
 void *thread(void *argptr){
   int clientfd = *((int *) argptr); // 클라이언트와 연결된 파일 디스크립터
-  Pthread_detach((pthread_self())); // 현재 실행중인 쓰레드를 분리함.
-  // 분리된 쓰레드는 종료시 자동으로 정리되므로, 다른 쓰레드가 join 할 피료가 없다..............................................
+  Pthread_detach((pthread_self())); // 현재 실행중인 쓰레드를 분리함. => 쓰레드 정리
   Free(argptr);
   doit(clientfd); // clientfd를 통해 데이터를 읽고, 응답을 보내는 등의 작업 수행
   Close(clientfd);
   return NULL;
 }
+
 //RIO = robust I/O = 안정적인 입출력 패키지 
 // rio는 Registered Input/Output 라는 소켓 API 이다. 메시지를 보낼 수 있는 텍스트창으로 보면 됨.
 //1. 클라이언트와의 fd를 클라이언트용 rio 에 연결(rio_readinit)
@@ -99,15 +108,28 @@ void doit(int clientfd)
   char *response_ptr, filename[MAXLINE], cgiargs[MAXLINE] ,*srcp;
   rio_t request_rio, response_rio;
 
-    /* Request 1 - 요청 라인 읽기 [🙋‍♀️ Client -> 🚒 Proxy] */
+    /* Request 1 - 요청 라인 읽기 [🙋‍♀️ Client -> 🧑‍🏫 Proxy] */
+    //브라우저에 http://www.cmu.edu/hub/index.html 과 같은 URL을 입력하면, 아래 http 요청받음
+    //GET http://www.cmu.edu/hub/index.html ****HTTP/1.1
+    // 이것을 파싱하면, 호스트이름 = www.cmu.edu 쿼리, path = hub/index.html
+    // 프록시 서버는 www.cmu.edu와의 연결을 열고, 아래와 같은 http 요청을 보낸다.
+    // GET / hu/index.html HTTP/1.0
+
   Rio_readinitb(&request_rio, clientfd);
   Rio_readlineb(&request_rio, request_buf, MAXLINE);
   printf("Request headers:\n %s\n", request_buf);
 
-  //요청 라인 parsing 을 통해 'method, uri, hostname, port, path ' 찾기
+
+  // ??? 학습의 목적이 무엇인가?
+  // HTTP 동작 및 소켓을 사용하여 네트워크 연결을 통신하는 프로그램 작성 방법.
+
+
+
   // sscanf(*str ,*format, ...) str: 데이터를 읽어들일 문자열, format : 형식 문자열, ...가변인자 리스트: format에 해당하는 변수의 주소들
-  // sscanf 함수는 주로 문자열 안에 포함된 특정 형태의 데이터 추출에 사용됨
+  // sscanf 함수는 주로 문자열 안에 포함된 특정 형태의 데이터 추출에 사용됨 . 추출 후 request_buf에 저장
   sscanf(request_buf, "%s %s", method, uri);
+
+  //요청 라인 parsing 을 통해 'method, uri, hostname, port, path ' 찾기
   parse_uri(uri, hostname, port, path);
   //server에 전송하기 위해 요청 라인의 형식 변경 : 'method uri version' -> 'method path HTTP/1.0'
   //sprintf(str, *format, ...) 다양한 데이터 타입을 문자열로 변환하거나, 복잡한 형태의 문자열을 생성할때
@@ -144,22 +166,22 @@ void doit(int clientfd)
     return;
   }
 
-      /* Request 2 - 요청 라인 전송 [🚒 Proxy -> 💻 Server] */
+      /* Request 2 - 요청 라인 전송 [🧑‍🏫Proxy -> 💻 Server] */
   Rio_writen(serverfd, request_buf, strlen(request_buf));
 
     // // 네트워크 디스크립터에 데이터를 안전하게 쓰는 역할
     // Rio_readinitb(&serverfd, serverfd);
   
-  /* 2️⃣ Request Header 읽기 & 전송 [🙋‍♀️ Client -> 🚒 Proxy -> 💻 Server] */
+  /* 2️⃣ Request Header 읽기 & 전송 [🙋‍♀️ Client -> 🧑‍🏫Proxy -> 💻 Server] */
   read_requesthdrs(&request_rio, request_buf, serverfd, hostname, port);
 
 
-    /* Response 1 - 응답 라인 읽기 & 전송 [💻 Server -> 🚒 Proxy -> 🙋‍♀️ Client] */
+    /* Response 1 - 응답 라인 읽기 & 전송 [💻 Server -> 🧑‍🏫Proxy -> 🙋‍♀️ Client] */
   Rio_readinitb(&response_rio, serverfd);                   // 서버의 응답을 담을 버퍼 초기화
   Rio_readlineb(&response_rio, response_buf, MAXLINE);      // 응답 라인 읽기
   Rio_writen(clientfd, response_buf, strlen(response_buf)); // 클라이언트에 응답 라인 보내기
 
-  /* 3️⃣ Response Header 읽기 & 전송 [💻 Server -> 🚒 Proxy -> 🙋‍♀️ Client] */
+  /* 3️⃣ Response Header 읽기 & 전송 [💻 Server -> 🧑‍🏫Proxy -> 🙋‍♀️ Client] */
   int content_length;
   while (strcmp(response_buf, "\r\n"))
     //   // Rio_readlineb(rio패키지를 사용하여 초기화된 rio_t구조체의 포인터 , 읽은 데이터를 저장할 버퍼의 포인터, 읽을 수 있는 최대 바이트 수)
@@ -173,7 +195,7 @@ void doit(int clientfd)
       Rio_writen(clientfd, response_buf, strlen(response_buf));
     }
 
-        /* Response 3 - 응답 바디 읽기 & 전송 [💻 Server -> 🚒 Proxy -> 🙋‍♀️ Client] */
+        /* Response 3 - 응답 바디 읽기 & 전송 [💻 Server -> 🧑‍🏫 Proxy -> 🙋‍♀️ Client] */
     if (content_length)
     {
         srcp = malloc(content_length);
